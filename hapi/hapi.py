@@ -36,6 +36,24 @@ from numpy import sort as npsort
 from bisect import bisect
 from warnings import warn,simplefilter
 import pydoc
+import logging
+
+# Set up Logging
+logger = logging.getLogger('hapi_logger')
+logger.setLevel(logging.DEBUG)
+# create file handler which logs even debug messages
+fh = logging.FileHandler('hapi.log')
+fh.setLevel(logging.DEBUG)
+# create console handler with a higher log level
+ch = logging.StreamHandler(sys.stdout)
+ch.setLevel(logging.INFO)
+# create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+# add the handlers to the logger
+logger.addHandler(fh)
+logger.addHandler(ch)
 
 # Enable warning repetitions
 simplefilter('always', UserWarning)
@@ -125,9 +143,6 @@ cSqrt2Ln2 = 1.1774100225
 # initialize global variables
 VARIABLES = {}
 
-VARIABLES['DEBUG'] = False
-if VARIABLES['DEBUG']: warn('DEBUG is set to True!')
-
 GLOBAL_DEBUG = False
 if GLOBAL_DEBUG: warn('GLOBAL_DEBUG is set to True!')
 
@@ -158,7 +173,7 @@ def arange_(lower,upper,step):
     if abs((upper-upper_new)-step) < 1e-10:
         upper_new += step
         npnt += 1    
-    return linspace(lower,upper_new,npnt)
+    return linspace(lower,upper_new,int(npnt))
 
 # ---------------------------------------------------------------
 # ---------------------------------------------------------------
@@ -1415,7 +1430,7 @@ def storage2cache(TableName,cast=True,ext=None,nlines=None,pos=None):
     #print 'storage2cache:'
     #print('TableName',TableName)
     if nlines is not None:
-        print('WARNING: storage2cache is reading the block of maximum %d lines'%nlines)
+        logger.warning('WARNING: storage2cache is reading the block of maximum %d lines', nlines)
     fullpath_data,fullpath_header = getFullTableAndHeaderName(TableName,ext)
     if TableName in LOCAL_TABLE_CACHE and \
        'filehandler' in LOCAL_TABLE_CACHE[TableName] and \
@@ -1429,8 +1444,7 @@ def storage2cache(TableName,cast=True,ext=None,nlines=None,pos=None):
     try:
         Header = json.loads(header_text)
     except:
-        print('HEADER:')
-        print(header_text)
+        logger.error('HEADER: %s \n Invalid header', header_text)
         raise Exception('Invalid header')
     #print 'Header:'+str(Header)
     LOCAL_TABLE_CACHE[TableName] = {}
@@ -1566,7 +1580,7 @@ def storage2cache(TableName,cast=True,ext=None,nlines=None,pos=None):
         InfileData.close()
         LOCAL_TABLE_CACHE[TableName]['filehandler'] = None
     InfileHeader.close()
-    print('                     Lines parsed: %d' % line_count)
+    logger.info('                     Lines parsed: %d' , line_count)
     return flag_EOF    
     
 ## old version based on regular expressions    
@@ -1674,7 +1688,7 @@ def createHeader(TableName):
     fp.close()
 
 def loadCache():
-    print('Using '+VARIABLES['BACKEND_DATABASE_NAME']+'\n')
+    logger.info('Using %s ', VARIABLES['BACKEND_DATABASE_NAME'])
     LOCAL_TABLE_CACHE = {}
     table_names = getTableNamesFromStorage(VARIABLES['BACKEND_DATABASE_NAME'])
     parfiles_without_header = scanForNewParfiles(VARIABLES['BACKEND_DATABASE_NAME'])
@@ -1684,7 +1698,7 @@ def loadCache():
         createHeader(tab_name)
         table_names.append(tab_name)
     for TableName in table_names:
-        print(TableName)
+        logger.info(TableName)
         storage2cache(TableName)
 
 def saveCache():
@@ -3092,7 +3106,7 @@ def queryHITRAN(TableName,iso_id_list,numin,numax,pargroups=[],params=[],dotpar=
     # create URL
     iso_id_list_str = [str(iso_id) for iso_id in iso_id_list]
     iso_id_list_str = ','.join(iso_id_list_str)
-    print('\nData is fetched from %s\n'%VARIABLES['GLOBAL_HOST'])
+    logger.info('Data is fetched from %s', VARIABLES['GLOBAL_HOST'])
     if pargroups or params: # custom par search
         url = VARIABLES['GLOBAL_HOST'] + '/lbl/api?' + \
         'iso_ids_list=' + iso_id_list_str + '&' + \
@@ -3122,21 +3136,21 @@ def queryHITRAN(TableName,iso_id_list,numin,numax,pargroups=[],params=[],dotpar=
     except urllib2.URLError:
         raise Exception('Cannot connect to %s. Try again or edit GLOBAL_HOST variable.' % GLOBAL_HOST)
     CHUNK = 64 * 1024
-    print('BEGIN DOWNLOAD: '+TableName)
+    logger.debug('BEGIN DOWNLOAD: %s',TableName)
     with open_(DataFileName,'w') as fp:
        while True:
           chunk = req.read(CHUNK)
           if not chunk: break
           fp.write(chunk.decode('utf-8'))
-          print('  %d bytes written to %s' % (CHUNK,DataFileName))
+          logger.debug('  %d bytes written to %s', CHUNK,DataFileName)
     with open(HeaderFileName,'w') as fp:       
        fp.write(json.dumps(TableHeader,indent=2))
-       print('Header written to %s' % HeaderFileName)
-    print('END DOWNLOAD')
+       logger.info('Header written to %s', HeaderFileName)
+    logger.debug('END DOWNLOAD')
     # Set comment
     # Get this table to LOCAL_TABLE_CACHE
     storage2cache(TableName)
-    print('PROCESSED')
+    logger.debug('PROCESSED')
 
 def saveHeader(TableName):
     ParameterList = prepareParlist(dotpar=True)    
@@ -18375,7 +18389,7 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
     for TRange,TrefHT in zip(TRanges,Trefs):
         if T >= TRange[0] and T < TRange[1]:
             break
-    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: TrefHT=%f'%TrefHT)
+    logger.debug('absorptionCoefficient_HT: TrefHT=%f',TrefHT)
 
     # create dictionary from Components
     ABUNDANCES = {}
@@ -18398,7 +18412,7 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
         factor = __FloatType__(1.0)
     else:
         factor = volumeConcentration(p,T)
-    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: factor=%f'%factor)        
+    logger.debug('absorptionCoefficient_HT: factor=%f',factor)
         
     # setup the default empty environment dependence function
     if not EnvDependences:
@@ -18416,10 +18430,11 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
             Diluent = {'self':1.}
         else:
             raise Exception('Unknown GammaL value: %s' % GammaL)
-    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Diluent=%s'%Diluent)
+    logger.debug('absorptionCoefficient_HT: Diluent=%s',Diluent)
         
     # Simple check
-    print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    # print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    logger.info("Diluent: %s", Diluent)
     for key in Diluent:
         val = Diluent[key]
         if val < 0 or val > 1: # if val < 0 and val > 1:# CHANGED RJH 23MAR18
@@ -18486,15 +18501,15 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
                     # search for HT-style name
                     Gamma0DB = LOCAL_TABLE_CACHE[TableName]['data']['gamma_HT_0_%s_%d'%(species_lower,TrefHT)][RowID]
                     if Gamma0DB == 0.: raise KeyError
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Gamma0DB=%f (found as %s)'%(Gamma0DB,'gamma_HT_0_%s_%d'%(species_lower,TrefHT)))
+                    logger.debug('absorptionCoefficient_HT: Gamma0DB=%f (found as %s)',Gamma0DB,'gamma_HT_0_%s_%d'%(species_lower,TrefHT))
                 except KeyError:
                     try:
                         # search for Voigt-style name
                         Gamma0DB = LOCAL_TABLE_CACHE[TableName]['data']['gamma_%s'%species_lower][RowID]
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Gamma0DB=%f (found as %s)'%(Gamma0DB,'gamma_%s'%species_lower))
+                        logger.debug('absorptionCoefficient_HT: Gamma0DB=%f (found as %s)',Gamma0DB,'gamma_%s'%species_lower)
                     except KeyError:
                         Gamma0DB = 0.0
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Gamma0DB=%f (not found in database)'%Gamma0DB)
+                        logger.debug('absorptionCoefficient_HT: Gamma0DB=%f (not found in database)',Gamma0DB)
                 
                 # Search for temperature exponent for broadening HWHM.
                 try:
@@ -18502,21 +18517,21 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
                     TempRatioPowerDB = LOCAL_TABLE_CACHE[TableName]['data']['n_HT_%s_%d'%(species_lower,TrefHT)][RowID]
                     if TempRatioPowerDB == 0.: raise KeyError
                     Tref = TrefHT
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: TempRatioPowerDB=%f (found as %s)'%(TempRatioPowerDB,'n_HT_%s_%d'%(species_lower,TrefHT)))
+                    logger.debug('absorptionCoefficient_HT: TempRatioPowerDB=%f (found as %s)',TempRatioPowerDB,'n_HT_%s_%d'%(species_lower,TrefHT))
                 except KeyError:
                     Tref = 296.
                     try:
                         # search for Voigt-style name
                         TempRatioPowerDB = LOCAL_TABLE_CACHE[TableName]['data']['n_%s'%species_lower][RowID]
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: TempRatioPowerDB=%f (found as %s). Tref is set to 296K.'%(TempRatioPowerDB,'n_%s'%species_lower))
+                        logger.debug('absorptionCoefficient_HT: TempRatioPowerDB=%f (found as %s). Tref is set to 296K.',TempRatioPowerDB,'n_%s'%species_lower)
                         if species_lower == 'self' and TempRatioPowerDB == 0.:
                             TempRatioPowerDB = LOCAL_TABLE_CACHE[TableName]['data']['n_air'][RowID] # same for self as for air
-                            if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: using n_air for self species because n_self=0.0')
+                            logger.debug('absorptionCoefficient_HT: using n_air for self species because n_self=0.0')
                     except KeyError:
                         #print('TempRatioPowerDB is set to zero')
                         #TempRatioPowerDB = 0                    
                         TempRatioPowerDB = LOCAL_TABLE_CACHE[TableName]['data']['n_air'][RowID]
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: TempRatioPowerDB=%f (found as n_air). Tref is set to 296K.'%TempRatioPowerDB)
+                        logger.debug('absorptionCoefficient_HT: TempRatioPowerDB=%f (found as n_air). Tref is set to 296K.',TempRatioPowerDB)
                 
                 # Add to the final Gamma0
                 Gamma0T = CustomEnvDependences.get('gamma_HT_0_%s_%d'%(species_lower,TrefHT),
@@ -18529,15 +18544,15 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
                     # search for HT-style name
                     Shift0DB = LOCAL_TABLE_CACHE[TableName]['data']['delta_HT_0_%s_%d'%(species_lower,TrefHT)][RowID]
                     if Shift0DB == 0.: raise KeyError
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Shift0DB=%f (found as %s)'%(Shift0DB,'delta_HT_0_%s_%d'%(species_lower,TrefHT)))
+                    logger.debug('absorptionCoefficient_HT: Shift0DB=%f (found as %s)',Shift0DB,'delta_HT_0_%s_%d'%(species_lower,TrefHT))
                 except KeyError:
                     try:
                         # search for Voigt-style name
                         Shift0DB = LOCAL_TABLE_CACHE[TableName]['data']['delta_%s'%species_lower][RowID]
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Shift0DB=%f (found as %s)'%(Shift0DB,'delta_%s'%species_lower))
+                        logger.debug('absorptionCoefficient_HT: Shift0DB=%f (found as %s)',Shift0DB,'delta_%s'%species_lower)
                     except KeyError:
                         Shift0DB = 0.0
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Shift0DB=%f (not found in database)'%Shift0DB)
+                        logger.debug('absorptionCoefficient_HT: Shift0DB=%f (not found in database)',Shift0DB)
                 
                 # Search for temperature dependence for shift.
                 try:
@@ -18545,16 +18560,16 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
                     deltap = LOCAL_TABLE_CACHE[TableName]['data']['deltap_HT_%s_%d'%(species_lower,TrefHT)][RowID]
                     if deltap ==0.: raise KeyError
                     Tref = TrefHT
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: deltap=%f (found as %s)'%(deltap,'deltap_HT_%s_%d'%(species_lower,TrefHT)))
+                    logger.debug('absorptionCoefficient_HT: deltap=%f (found as %s)',deltap,'deltap_HT_%s_%d'%(species_lower,TrefHT))
                 except KeyError:
                     Tref = 296.
                     try:
                         # search for Voigt-style name
                         deltap = LOCAL_TABLE_CACHE[TableName]['data']['deltap_%s'%species_lower][RowID]
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: deltap=%f (found as %s). Tref is set to 296K.'%(deltap,'deltap_%s'%species_lower))
+                        logger.debug('absorptionCoefficient_HT: deltap=%f (found as %s). Tref is set to 296K.',deltap,'deltap_%s'%species_lower)
                     except KeyError:
                         deltap = 0.0
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: deltap=%f (not found in database)'%deltap)
+                        logger.debug('absorptionCoefficient_HT: deltap=%f (not found in database)',deltap)
 
                 Shift0T = CustomEnvDependences.get('deltap_HT_%s_%d'%(species_lower,TrefHT),
                                 CustomEnvDependences.get('deltap_%s'%species_lower,
@@ -18565,26 +18580,26 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
                 try:
                     Gamma2DB = LOCAL_TABLE_CACHE[TableName]['data']['gamma_HT_2_%s_%d'%(species_lower,TrefHT)][RowID]
                     if Gamma2DB ==0.: raise KeyError
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Gamma2DB=%f (found as %s)'%(Gamma2DB,'gamma_HT_2_%s_%d'%(species_lower,TrefHT)))
+                    logger.debug('absorptionCoefficient_HT: Gamma2DB=%f (found as %s)',Gamma2DB,'gamma_HT_2_%s_%d'%(species_lower,TrefHT))
                 except KeyError:
                     try:
                         SDDB = LOCAL_TABLE_CACHE[TableName]['data']['SD_%s'%species_lower][RowID]
                         Gamma2DB = SDDB*Gamma0DB
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: SDDB=%f (found as %s)'%(SDDB,'SD_%s'%species_lower))
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Gamma2DB = SDDB*Gamma0DB')
+                        logger.debug('absorptionCoefficient_HT: SDDB=%f (found as %s)',SDDB,'SD_%s'%species_lower)
+                        logger.debug('absorptionCoefficient_HT: Gamma2DB = SDDB*Gamma0DB')
                     except KeyError:
                         Gamma2DB = 0.0
-                        if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Gamma2DB=%f (not found in database)'%Gamma2DB)
+                        logger.debug('absorptionCoefficient_HT: Gamma2DB=%f (not found in database)',Gamma2DB)
 
                 Gamma2 += abun*CustomEnvDependences.get('gamma_HT_2_%s_%d'%(species_lower,TrefHT),Gamma2DB*(p/pref))
                 
                 # Search for speed dependence for shift.
                 try:
                     Shift2DB = LOCAL_TABLE_CACHE[TableName]['data']['delta_HT_2_%s_%d'%(species_lower,TrefHT)][RowID]
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Shift2DB=%f (found as %s)'%(Shift2DB,'delta_HT_2_%s_%d'%(species_lower,TrefHT)))
+                    logger.debug('absorptionCoefficient_HT: Shift2DB=%f (found as %s)',Shift2DB,'delta_HT_2_%s_%d'%(species_lower,TrefHT))
                 except KeyError:
                     Shift2DB = 0.
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: Shift2DB=%f (not found in database)'%Shift2DB)
+                    logger.debug('absorptionCoefficient_HT: Shift2DB=%f (not found in database)',Shift2DB)
                 
                 Shift2 += abun*CustomEnvDependences.get('delta_HT_2_%s_%d'%(species_lower,TrefHT),
                                 Shift2DB*p/pref)
@@ -18592,18 +18607,18 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
                 # Search for frequency of VC
                 try:
                     NuVCDB = LOCAL_TABLE_CACHE[TableName]['data']['nu_HT_%s'%species_lower][RowID]
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: NuVCDB=%f (found as %s)'%(NuVCDB,'nu_HT_%s'%species_lower))
+                    logger.debug('absorptionCoefficient_HT: NuVCDB=%f (found as %s)',NuVCDB,'nu_HT_%s'%species_lower)
                 except KeyError:
                     NuVCDB = 0.
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: NuVCDB=%f (not found in database)'%NuVCDB)
+                    logger.debug('absorptionCoefficient_HT: NuVCDB=%f (not found in database)',NuVCDB)
                 
                 # Search for temperature exponent for frequency of VC
                 try:
                     KappaDB = LOCAL_TABLE_CACHE[TableName]['data']['kappa_HT_%s'%species_lower][RowID]
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: KappaDB=%f (found as %s)'%(KappaDB,'kappa_HT_%s'%species_lower))
+                    logger.debug('absorptionCoefficient_HT: KappaDB=%f (found as %s)',KappaDB,'kappa_HT_%s'%species_lower)
                 except KeyError:
                     KappaDB = 0.
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: KappaDB=%f (not found in database)'%KappaDB)
+                    logger.debug('absorptionCoefficient_HT: KappaDB=%f (not found in database)',KappaDB)
                     
                 NuVC += abun*CustomEnvDependences.get('nu_HT_%s'%species_lower,
                              NuVCDB*(Tref/T)**KappaDB*p)
@@ -18611,10 +18626,10 @@ def absorptionCoefficient_HT(Components=None,SourceTables=None,partitionFunction
                 # Setup correlation parameter
                 try:
                     EtaDB = LOCAL_TABLE_CACHE[TableName]['data']['eta_HT_%s'%species_lower][RowID]
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: EtaDB=%f (found as %s)'%(EtaDB,'eta_HT_%s'%species_lower))
+                    logger.debug('absorptionCoefficient_HT: EtaDB=%f (found as %s)',(EtaDB,'eta_HT_%s'%species_lower))
                 except KeyError:
                     EtaDB = 0.
-                    if VARIABLES['DEBUG']: print('absorptionCoefficient_HT: EtaDB=%f (not found in database)'%EtaDB)
+                    logger.debug('absorptionCoefficient_HT: EtaDB=%f (not found in database)',EtaDB)
                 
                 EtaNumer += EtaDB*abun*(Gamma0T+1j*Shift0T)
                 
@@ -18763,7 +18778,8 @@ def absorptionCoefficient_SDVoigt(Components=None,SourceTables=None,partitionFun
             raise Exception('Unknown GammaL value: %s' % GammaL)
         
     # Simple check
-    print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    #print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    logger.info('Diluent : %s', Diluent)
     for key in Diluent:
         val = Diluent[key]
         if val < 0 or val > 1: # if val < 0 and val > 1:# CHANGED RJH 23MAR18
@@ -19011,7 +19027,8 @@ def absorptionCoefficient_Voigt(Components=None,SourceTables=None,partitionFunct
             raise Exception('Unknown GammaL value: %s' % GammaL)
         
     # Simple check
-    print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    #print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    logger.info('Diluent : %s', Diluent)
     for key in Diluent:
         val = Diluent[key]
         if val < 0 or val > 1: # if val < 0 and val > 1:# CHANGED RJH 23MAR18
@@ -19189,7 +19206,9 @@ def absorptionCoefficient_Lorentz(Components=None,SourceTables=None,partitionFun
                                 OmegaStep,OmegaWing,IntensityThreshold,Format)
     
     # warn user about too large omega step
-    if OmegaStep>0.1: warn('Big wavenumber step: possible accuracy decline')
+    if OmegaStep>0.1:
+        logger.warning('Big wavenumber step: possible accuracy decline')
+        # warn('Big wavenumber step: possible accuracy decline')
 
     # get uniform linespace for cross-section
     #number_of_points = (OmegaRange[1]-OmegaRange[0])/OmegaStep + 1
@@ -19250,7 +19269,8 @@ def absorptionCoefficient_Lorentz(Components=None,SourceTables=None,partitionFun
             raise Exception('Unknown GammaL value: %s' % GammaL)
         
     # Simple check
-    print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    # print(Diluent)  # Added print statement # CHANGED RJH 23MAR18  # Simple check
+    logger.info('Diluent: %s', Diluent)
     for key in Diluent:
         val = Diluent[key]
         if val < 0 or val > 1: # if val < 0 and val > 1:# CHANGED RJH 23MAR18
